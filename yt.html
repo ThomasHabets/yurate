@@ -1,0 +1,130 @@
+<!--
+ *
+ *    Copyright 2021 Google LLC
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+-->
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+  .error {
+  color: red;
+  }
+  .video-list li {
+  list-style-type: none;
+  display: inline-block;
+  border: 1px solid black;
+  margin-bottom: 0.3em;
+  margin-right: 0.3em;
+  padding-top: 0.3em;
+  padding-left: 0.1em;
+  padding-right: 0.1em;
+  }
+  .video-list a {
+  display: inline-block;
+  text-align: center;
+  padding: 10px;
+  width: 170px;
+  height: 200px;
+  overflow: hidden;
+  }
+  .video-list img {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  width: 160px;
+  height: 120px;
+  }
+  .video-list button.right {
+  float: right;
+  }
+  #watch-later button {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  }
+  .loader {
+  border: 16px solid #f3f3f3; /* Light grey */
+  border-top: 16px solid #3498db; /* Blue */
+  border-radius: 50%;
+  width: 120px;
+  height: 120px;
+  animation: spin 2s linear infinite;
+  display: none;
+  }
+
+  @keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+  }
+</style>
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="yt.js"></script>
+  </head>
+  <body>
+<button id="btn-login"     onclick="login()">Log in</button>
+<button id="btn-load-wl"   onclick="render_watch_later()" disabled>Get WatchLater</button>
+<button id="btn-load-subs" onclick="render_subscriptions()" disabled>Get subscriptions</button>
+<button id="btn-save" onclick="save_state()">Save state</button>
+<input type="text" id="input-watch-later" onchange="set_watch_later()"/>
+
+<h2>Watch later</h2>
+<div id="watch-later-loader" class="loader"></div>
+<div id="watch-later" class="video-list">
+  <!--
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
+  -->
+</div>
+
+<h2>Subscription videos</h2>
+<button id="btn-skip-all"  onclick="skip_all()" disabled>Skip all</button>
+<hr>
+<div id="subscription-loader" class="loader"></div>
+<div id="subscription-loading-details"></div>
+<div id="subscription-videos" class="video-list">
+  <!--
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
+  -->
+</div>
+
+
+<h2>Log</h2>
+<div id="log"></div>
+</body>
