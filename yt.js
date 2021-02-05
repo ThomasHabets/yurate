@@ -13,9 +13,8 @@
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
  */
-
 // Quota check:
-// https://console.cloud.google.com/admin/quotas/details;servicem=youtube.googleapis.com;metricm=youtube.googleapis.com%2Fdefault;limitIdm=1%2Fd%2F%7Bproject%7D?project=XXX
+// https://console.cloud.google.com/admin/quotas/details;servicem=youtube.googleapis.com;metricm=youtube.googleapis.com%2Fdefault;limitIdm=1%2Fd%2F%7Bproject%7D?project=XXXXXX
 //
 // Quota costs:
 // https://developers.google.com/youtube/v3/determine_quota_cost
@@ -31,8 +30,8 @@
 // * create state file if it doesn't exist
 
 // TODO: make client ID and API key settable, and store in localStorage.
-var client_id = "XXX";
-var api_key = "XXX";
+var state_file_id = null;
+var unsaved_changes = false;
 const app_data_folder = "appDataFolder";
 const maxSubscriptions = 50;
 const maxWatchLaterVideos = 50;
@@ -44,90 +43,279 @@ function set_watch_later()
     log(`Watch later changed to ${state.watch_later}`);
 }
 
-var state = {
-    "skip": {}, // Map of video IDs that we don't care about, to when they were marked such.
-    "videos": {}, // Map of video ID to some metadata, for when they get marked private.
-    "chan2playlist": {}, // Map from channel ID to playlist ID.
-    "watch_later": "", // Playlist ID of your watch-later.
+function make_empty_state()
+{
+    return {
+        "skip": new Map(), // Map of video IDs that we don't care about, to when they were marked such.
+        "videos": new Map(), // Map of video ID to some metadata, for when they get marked private.
+        "chan2playlist": new Map(), // Map from channel ID to playlist ID.
+        "watch_later": "", // Playlist ID of your watch-later.
+    };
+}
+
+// Replace any objects with Maps.
+function fix_state(st)
+{
+    let ret = st;
+    ["skip", "videos", "chan2playlist"].forEach((e) => {
+        if (ret[e].size === undefined) {
+            // log("Fixed state entry", e, ret[e]);
+            ret[e] = new Map(Object.entries(ret[e]));
+        }
+    });
+    return ret;
+}
+
+var state = make_empty_state();
+
+var saves_in_flight = 0;
+function trigger_save()
+{
+    unsaved_changes = true;
+    if (saves_in_flight == 0) {
+        document.getElementById("unsaved-changes").innerText = "Unsaved changes…";
+    }
+    saves_in_flight++;
+    setTimeout(() => {
+        saves_in_flight--;
+        if (saves_in_flight == 0) {
+            let st = window.performance.now();
+            save_state().then((file) => {
+                let et = window.performance.now();
+                log(`Settings saved in ${et - st} ms`, file);
+                document.getElementById("unsaved-changes").innerText = "";
+                unsaved_changes = false;
+            });
+        }
+    }, 1000);
+}
+
+window.addEventListener("load", (event) => {
+    document.getElementById("watch-later-select").onchange = function(ev) {
+        state.watch_later = this.value;
+        trigger_save();
+    };
+
+    // Register button handlers.
+    [
+        ["btn-login", login],
+        ["btn-load-wl", render_watch_later],
+        ["btn-load-subs", render_subscriptions],
+        ["btn-save", save_state],
+        ["btn-skip-all", skip_all],
+    ].forEach((e) => {
+        document.getElementById(e[0]).onclick = e[1];
+    });
+    show_page("login");
+});
+
+function show_page(p)
+{
+    let ps = document.getElementsByClassName("pages");
+    for (let i = 0; i < ps.length; i++) {
+        ps[i].style.display = "none";
+    }
+    document.getElementById(`page-${p}`).style.display="block";
+}
+
+function load_playlists()
+{
+    return gapi.client.youtube.playlists.list({
+        "part": [
+            "snippet"
+        ],
+        "mine": true
+    }).then(function(response) {
+        debug("Playlist.list response", response);
+        let s = document.getElementById("watch-later-select");
+        if (response.result.items.length > 0) {
+            s.innerHTML = "";
+        }
+        let ids = [];
+        for (let n in response.result.items) {
+            let pl = response.result.items[n];
+            ids.push(pl.id);
+            let o = document.createElement("option");
+            o.value = pl.id;
+            o.innerText = pl.snippet.title;
+            if (state.watch_later === pl.id) {
+                o.selected = true;
+            }
+            s.appendChild(o);
+        }
+        s.value = state.watch_later;
+        return Promise.resolve(ids);
+    }, function(err) { console.error("Loading playlists error", err); });
+}
+
+window.onbeforeunload = function() {
+    if (unsaved_changes) {
+        return "There are unsaved changes. Do you want to navigate away, losing them?";
+    }
 };
 
+// create state file, and return its ID
+function create_state_file()
+{
+    return gapi.client.drive.files.create({
+        parents: [app_data_folder],
+        name: "state.json",
+        media: {
+            mimeType: 'application/json',
+        },
+        fields: "id",
+    }).then(function(response){
+        log("Drive create response", response);
+        state_file_id = response.result.id;
+        return Promise.resolve(state_file_id);
+    }, function(err, file) {
+        error("Drive create error", err,file);
+    });
+}
+
+function get_state_file_id()
+{
+    if (state_file_id !== null) {
+        return Promise.resolve(state_file_id);
+    }
+    return gapi.client.drive.files.list({
+        "spaces": [app_data_folder],
+    }).then(function(response){
+        debug("Drive list response (for load)", response);
+        let file = null;
+        for (n in response.result.files) {
+            file = response.result.files[n];
+            debug("File", file);
+        }
+
+        if (file === null) {
+            return create_state_file();
+        }
+        state_file_id = file.id;
+        return Promise.resolve(file.id);
+    });
+}
+
+function download_drive_file(file_id) {
+    return new Promise((resolve, reject) => {
+        var accessToken = gapi.auth.getToken().access_token;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', `https://www.googleapis.com/drive/v2/files/${file_id}?alt=media`);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
+        xhr.onload = function() {
+            debug("Loaded from Drive", xhr);
+            let js = JSON.parse(xhr.responseText);
+            debug("JS from Drive", js);
+            resolve({
+                result: js,
+            });
+        };
+        xhr.onerror = function() {
+            reject(null);
+        };
+        xhr.send();
+    });
+}
+// Load state from Drive, or create empty state.
+//
+// Returns promise of such state, but it also sets the global variable
+// `state` before resolving the promise.
 function load_state()
 {
     log("Loading settings");
 
-    let l = JSON.parse(localStorage.getItem("state"));
+    // Load local storage state first, in case we have that.
+    //
+    // In case we also have Drive state, then Drive state overrides
+    // what we have here.
+    let l = state_from_string(localStorage.getItem("state"));
     if (l !== null) {
-        state = l;
+        //state = fix_state(l);
     }
 
-    // Load from the cloud.
-    return gapi.client.drive.files.list({
-        "spaces": [app_data_folder],
-    }).then(function(response){
-        log("Drive list response", response);
-        let file = null;
-        for (n in response.result.files) {
-            file = response.result.files[n];
-            log("File", file);
-        }
-        return gapi.client.drive.files.get({
-            "fileId": file.id,
-            //"fields": "webContentLink",
-            //"fields": "*",
-            "alt": "media",
-        }).then(function(response) {
+    let playlistpromise = load_playlists();
+
+    return get_state_file_id().then((file_id) => {
+        // Load from the cloud.
+//        return gapi.client.drive.files.get({
+//            "fileId": file_id,
+        //            "alt": "media",
+        return download_drive_file(file_id).then(function(response) {
+            log("Settings file read");
             console.log("State file retrieved", response);
-            state = response.result;
-            if (state.chan2playlist === undefined) { state.chan2playlist = {};}
-            if (state.skip === undefined) { state.skip = {};}
-            if (state.videos === undefined) { state.videos = {};}
-            log("Settings loaded successfully");
+            state2 = state_from_string(JSON.stringify(response.result));
+            if (state2 === false) {
+                state2 = make_empty_state();
+            }
+            // we need to fix it, because the XHR parsed it as plain
+            // JSON where it actually contains maps.
+            state2 = fix_state(state2);
+            debug("Skip list", state.skip.size, state2.skip.size, state2.skip);
+            state.skip = new Map([...state.skip, ...state2.skip]);
+            state.videos = new Map([...state.videos, ...state2.videos]);
+            state.chan2playlist = new Map([...state.chan2playlist, ...state2.chan2playlist]);
+            if (state2.watch_later !== undefined && state2.watch_later != "") {
+                state.watch_later = state2.watch_later;
+            }
+            return playlistpromise.then((ids) => {
+                if (state.watch_later === undefined && ids.length > 0) {
+                    state.watch_later = ids[0];
+                    trigger_save();
+                }
+                document.getElementById("watch-later-select").value = state.watch_later;
+                return Promise.resolve(state);
+            });
         }, function(err) { error("Loading state file", err); });
     }, function(err) {
-        error("Drive load error, creating the file", err);
-        return gapi.client.drive.files.create({
-            parents: [app_data_folder],
-            name: "state.json",
-            media: {
-                mimeType: 'application/json',
-            },
-            fields: "id",
-        }).then(function(response){
-            log("Drive create response", response);
-        }, function(err, file) {
-            error("Drive create error", err,file);
-        });
+        error("Drive load error", err);
     }).catch(function(err) {
         error("Drive load fatal", err);
     });
 }
 
+// return a serialized version of the state.
+function state_string()
+{
+    return JSON.stringify(state, (k, value) => {
+        if (value instanceof Map) {
+            return Object.fromEntries(value);
+        }
+        return value;
+    });
+}
+
+// deserialize state and return.
+function state_from_string(s)
+{
+    return fix_state(JSON.parse(s));
+}
+
+// Save state.
 function save_state()
 {
+    log("Saving state");
     // Save a backup locally.
-    localStorage.setItem("state", JSON.stringify(state));
+    try {
+        localStorage.setItem("state", state_string());
+    } catch (err) {
+        error("Failed to save locally", err);
+    }
+
     // Seems gapi.client.drive.files.create doesn't support actually updating content.
     // https://stackoverflow.com/questions/34905363/create-file-with-google-drive-api-v3-javascript
 
     // Load from the cloud.
-    return gapi.client.drive.files.list({
-        "spaces": [app_data_folder],
-    }).then(function(response){
-        log("Drive list response (for save)", response);
-        let file = null;
-        for (n in response.result.files) {
-            file = response.result.files[n];
-            log("File", file);
-        }
+    return get_state_file_id().then((file_id) => {
         let req = gapi.client.request({
-            'path': `/upload/drive/v3/files/${file.id}`,
+            'path': `/upload/drive/v3/files/${file_id}`,
             'method': 'PATCH',
             'params': {'uploadType': 'media'},
-            body: JSON.stringify(state),
+            body: state_string(),
         });
-        // TODO: turn into promise.
-        req.execute(function(file) {
-            log("Settings saved", file);
+        return new Promise((resolve, reject) => {
+            req.execute(function(file) {
+                resolve(file);
+            });
         });
     }, function(err) {
         error("Save state error", err);
@@ -137,9 +325,9 @@ function save_state()
 
 function login() {
     log("Starting login");
+    show_page("loading");
     authenticate().then(loadClient).then(load_state).then(function(){
-        document.getElementById("btn-load-wl").disabled = false;
-        document.getElementById("btn-load-subs").disabled = false;
+        show_page("content");
     }).catch(function(err) {
         error("Logging in", err);
     });
@@ -223,9 +411,19 @@ function render_watch_later() {
             let li = document.createElement("li");
             let a = document.createElement("a");
             let vtitle = document.createElement("span");
+            let thumbnail = items[i].snippet.thumbnails.high;
 
             // Set attributes.
-            img.src = items[i].snippet.thumbnails.high.url;
+            if (thumbnail === undefined) {
+                // TODO: some broken thumbnail
+                let old = state.videos.get(video_id);
+                if (old !== undefined) {
+                    video_title = `DELETED/PRIVATE: ${old.title}`;
+                    img.src = old.thumbnail;
+                }
+            } else {
+                img.src = thumbnail.url;
+            }
             a.href = "https://www.youtube.com/watch?v="+video_id;
             vtitle.innerText=video_title;
             btn.innerText = "Delete";
@@ -263,6 +461,7 @@ function render_subscriptions()
         let playlists_read = 0;
         for (let i = 0; i < playlist_ids.length; i++) {
             // TODO: should this be paginated, or do we only care about the first 50?
+            // TODO: use gapi.client.request.newBatch?
             proms.push(gapi.client.youtube.playlistItems.list({
                 "part": [
                     "contentDetails,snippet"
@@ -288,14 +487,19 @@ function render_subscriptions()
                     } else {
                         // Private video, probably.
                         //error("What", items[i], thumbs);
+                        let old = state.videos.get(e.id);
+                        if (old !== undefined) {
+                            e = old;
+                        }
                     }
-                    if (state.videos[e.id] === undefined) {
-                        state.videos[e.id] = e;
+                    if (!state.videos.has(e.id)) {
+                        state.videos.set(e.id, e);
+                        trigger_save();
                     }
                     if (Date.parse(e.ts) < tslimit) {
                         continue;
                     }
-                    if (state.skip[e.id] !== undefined) {
+                    if (state.skip.has(e.id)) {
                         continue;
                     }
                     videos.push(e);
@@ -406,7 +610,8 @@ function watch_later_handler(ev)
         // Handle the results here (response.result has the parsed body).
         log("Added to watch later response", response);
         // Remove from view, now and in the future.
-        state.skip[video_id] = Date.now()
+        state.skip.set(video_id, Date.now())
+        trigger_save();
         let child = self.closest("li");
         child.parentElement.removeChild(child);
     }, function(err) { error("Failed to add to watch later", err); });
@@ -415,7 +620,8 @@ function watch_later_handler(ev)
 function skip_handler(ev)
 {
     console.log("Skip", this);
-    state.skip[this.getAttribute("data-video-id")] = Date.now()
+    state.skip.set(this.getAttribute("data-video-id"), Date.now())
+    trigger_save();
     let child = this.closest("li");
     child.parentElement.removeChild(child);
 }
@@ -477,12 +683,13 @@ function channels_to_playlists(channel_ids, playlist_ids, next_page)
         "pageToken": next_page,
         "maxResults": page_size,
     }).then(function(response) {
-        console.log("Channel list response", response);
+        console.log("Channel list response (for load)", response);
         let items = response.result.items;
         for (let i = 0; i < items.length; i++) {
             let u = items[i].contentDetails.relatedPlaylists.uploads;
             playlist_ids.push(u);
-            state.chan2playlist[items[i].id] = u;
+            state.chan2playlist.set(items[i].id, u);
+            trigger_save();
         }
         if (items.length != cur_chans.length) {
             error("Did not get a page full", items.length, cur_chans.length, response.result.nextPageToken);
@@ -505,7 +712,7 @@ function get_subscription_playlists()
         let channels_to_fetch = [];
         channel_ids.forEach(function(channel_id) {
             // Check cache.
-            let u = state.chan2playlist[channel_id];
+            let u = state.chan2playlist.get(channel_id);
             if (u !== undefined) {
                 playlist_ids.push(u);
                 return;

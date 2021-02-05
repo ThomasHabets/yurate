@@ -16,7 +16,9 @@
 -->
 <html>
   <head>
+    <title>Yurate</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
   .error {
   color: red;
@@ -54,6 +56,7 @@
   margin-left: auto;
   margin-right: auto;
   }
+
   .loader {
   border: 16px solid #f3f3f3; /* Light grey */
   border-top: 16px solid #3498db; /* Blue */
@@ -63,68 +66,89 @@
   animation: spin 2s linear infinite;
   display: none;
   }
+  #page-loader  {
+  display: block;
+  }
 
   @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
   }
-</style>
-<script src="https://apis.google.com/js/api.js"></script>
-<script src="yt.js"></script>
+
+  .pages {
+    display: none;
+  }
+
+  /* Ugly hack to make the full page loading spinner be square. */
+  #page-loading {
+  display: block;
+  background-color: white;
+  background-color: rgba(255,255,255,0.7);
+  }
+  #page-loading div {
+  width: 40em;
+  height: 40em;
+  }
+  #page-loading:after {
+  content: "";
+  display: block;
+  padding-bottom: 100%;
+  }
+  .fullscreen {
+  position: relative;
+  left: 0;
+  margin-left: auto;
+  margin-right: auto;
+  top: 0;
+  z-index: 1;
+  width: 50%;
+  }
+  #btn-login {
+  width: 50%;
+  height: 30%;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  }
+    </style>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="yt-creds.js"></script>
+    <script src="yt.js"></script>
   </head>
+
   <body>
-<button id="btn-login"     onclick="login()">Log in</button>
-<button id="btn-load-wl"   onclick="render_watch_later()" disabled>Get WatchLater</button>
-<button id="btn-load-subs" onclick="render_subscriptions()" disabled>Get subscriptions</button>
-<button id="btn-save" onclick="save_state()">Save state</button>
-<input type="text" id="input-watch-later" onchange="set_watch_later()"/>
+    <div id="page-loading" class="pages fullscreen">
+      Loading…<br/>
+      <div id="page-loader" class="loader"></div>
+    </div>
 
-<h2>Watch later</h2>
-<div id="watch-later-loader" class="loader"></div>
-<div id="watch-later" class="video-list">
-  <!--
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><button>Delete</button></li>
-  -->
-</div>
+    <div id="page-login" class="pages">
+      <button id="btn-login">Log in</button>
+    </div>
 
-<h2>Subscription videos</h2>
-<button id="btn-skip-all"  onclick="skip_all()" disabled>Skip all</button>
-<hr>
-<div id="subscription-loader" class="loader"></div>
-<div id="subscription-loading-details"></div>
-<div id="subscription-videos" class="video-list">
-  <!--
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  <li><a href=""><img src="https://cdn.habets.se/favicon.ico">Title thing</a><div><button>WL</button><button class="right">Skip</button></div></li>
-  -->
-</div>
+    <div id="page-content" class="pages">
+      <button id="btn-load-wl">Get WatchLater</button>
+      <button id="btn-load-subs">Get subscriptions</button>
+      <button id="btn-save">Force save state</button>
+      <select id="watch-later-select">
+        <option value="">&lt;unset&gt;</option>
+      </select>
+      <span id="unsaved-changes"></span>
+
+      <h2>Watch later</h2>
+      <div id="watch-later-loader" class="loader"></div>
+      <div id="watch-later" class="video-list"></div>
+
+      <h2>Subscription videos</h2>
+      <button id="btn-skip-all" disabled>Skip all</button>
+      <hr>
+      <div id="subscription-loader" class="loader"></div>
+      <div id="subscription-loading-details"></div>
+      <div id="subscription-videos" class="video-list"></div>
+    </div>
 
 
-<h2>Log</h2>
-<div id="log"></div>
-</body>
+    <h2>Log</h2>
+    <div id="log"></div>
+  </body>
+</html>
