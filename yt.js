@@ -479,6 +479,7 @@ function render_subscriptions()
                         "id": items[i].snippet.resourceId.videoId,
                         //"playlist_id": items[i].id,
                         "title": items[i].snippet.title,
+                        "channel_title": items[i].snippet.channelTitle,
                         "ts": items[i].snippet.publishedAt,
                     };
                     let thumbs = items[i].snippet.thumbnails;
@@ -525,6 +526,7 @@ function render_subscriptions()
             for (let i = 0; i < videos.length; i++) {
                 let li = document.createElement("li");
                 let a = document.createElement("a");
+                let ctitle = document.createElement("span");
                 let vtitle = document.createElement("span");
                 let img = document.createElement("img");
                 let btn_wl = document.createElement("button");
@@ -538,6 +540,8 @@ function render_subscriptions()
                 }
                 a.href="https://www.youtube.com/watch?v="+videos[i].id;
                 vtitle.innerHTML = videos[i].title;
+                ctitle.innerHTML = videos[i].channel_title;
+                ctitle.className = "channel_title";
                 btn_wl.innerHTML = "Watch Later";
                 btn_wl.onclick = watch_later_handler;
                 btn_wl.setAttribute("data-video-id", videos[i].id)
@@ -547,9 +551,10 @@ function render_subscriptions()
                 btn_skip.setAttribute("data-video-id", videos[i].id)
 
                 a.appendChild(img);
-                a.appendChild(vtitle);
+                li.appendChild(ctitle);
                 li.appendChild(div_btn);
                 li.appendChild(a);
+                a.appendChild(vtitle);
                 div_btn.appendChild(btn_wl);
                 div_btn.appendChild(btn_skip);
                 so.appendChild(li);
