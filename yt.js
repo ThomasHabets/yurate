@@ -602,11 +602,15 @@ function watch_later_delete_handler(ev)
     }, function(err) { error("Remove from watch later error", err); });
 }
 
-function watch_later_handler(ev)
+    function watch_later_handler(ev)
+    {
+        return watch_later_handler_button(this);
+    }
+function watch_later_handler_button(ev)
 {
-    let video_id = this.getAttribute("data-video-id");
-    console.log("Watch later", this, video_id);
-    let self = this;
+    let video_id = ev.getAttribute("data-video-id");
+    console.log("Watch later", ev, video_id);
+    let self = ev;
     return gapi.client.youtube.playlistItems.insert({
         "part": [
             "snippet"
@@ -632,14 +636,20 @@ function watch_later_handler(ev)
     }, function(err) { error("Failed to add to watch later", err); });
 }
 
+    // Called with the skip button object.
 function skip_handler(ev)
-{
-    console.log("Skip", this);
-    state.skip.set(this.getAttribute("data-video-id"), Date.now())
-    trigger_save();
-    let child = this.closest("li");
-    child.parentElement.removeChild(child);
+    {
+        skip_handler_button(this);
 }
+
+    function skip_handler_button(ev)
+    {
+        console.log("Skip", ev);
+        state.skip.set(ev.getAttribute("data-video-id"), Date.now())
+        trigger_save();
+        let child = ev.closest("li");
+        child.parentElement.removeChild(child);
+    }
 
 // return channels.
 function get_subscriptions(channel_ids, next_page)
@@ -747,3 +757,40 @@ function get_subscription_playlists()
 gapi.load("client:auth2", function() {
     gapi.auth2.init({client_id: client_id});
 });
+
+var current_selection = 0;
+function hilight_video()
+{
+    document.querySelectorAll(`#subscription-videos li`).forEach((e) => { e.classList.remove("active-video");});
+    if (current_selection > 0) {
+        let n = document.querySelector(`#subscription-videos li:nth-child(${current_selection})`);
+        n.classList.add("active-video");
+    }
+}
+document.onkeyup = (e) => {
+    if (e.key == 'n') {
+        current_selection++;
+        hilight_video();
+    } else if (e.key == 'p') {
+        if (current_selection > 1) {
+            current_selection--;
+        }
+        hilight_video();
+    } else if (e.key == 's') {
+        render_subscriptions();
+    } else if (e.key == 'w') {
+        render_watch_later();
+    } else if (e.key == 'y') {
+        let active = document.querySelector(`#subscription-videos li:nth-child(${current_selection}) button[class*="skip-button"]`);
+        watch_later_handler_button(active).then(() => {
+            hilight_video();
+        });
+    } else if (e.key == 'd') {
+        let active = document.querySelector(`#subscription-videos li:nth-child(${current_selection}) button[class*="skip-button"]`);
+        skip_handler_button(active).then(() => {
+            hilight_video();
+        });
+    } else {
+        console.log("Unknown key", e);
+    }
+};
