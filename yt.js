@@ -57,6 +57,12 @@ function make_empty_state()
 function fix_state(st)
 {
     let ret = st;
+    if (ret === undefined) {
+        return make_empty_state();
+    }
+    if (ret === null) {
+        return make_empty_state();
+    }
     ["skip", "videos", "chan2playlist"].forEach((e) => {
         if (ret[e].size === undefined) {
             // log("Fixed state entry", e, ret[e]);
@@ -73,7 +79,7 @@ function trigger_save()
 {
     unsaved_changes = true;
     if (saves_in_flight == 0) {
-        document.getElementById("unsaved-changes").innerText = "Unsaved changes…";
+        document.getElementById("unsaved-changes").innerText = "Saving unsaved changes…";
     }
     saves_in_flight++;
     setTimeout(() => {
@@ -204,11 +210,15 @@ function download_drive_file(file_id) {
         xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
         xhr.onload = function() {
             debug("Loaded from Drive", xhr);
-            let js = JSON.parse(xhr.responseText);
-            debug("JS from Drive", js);
-            resolve({
-                result: js,
-            });
+            if (xhr.responseText == "") {
+                resolve({result: make_empty_state()});
+            } else {
+                let js = JSON.parse(xhr.responseText);
+                debug("JS from Drive", js);
+                resolve({
+                    result: js,
+                });
+            }
         };
         xhr.onerror = function() {
             reject(null);
@@ -298,7 +308,7 @@ function save_state()
     try {
         localStorage.setItem("state", state_string());
     } catch (err) {
-        error("Failed to save locally", err);
+        debug("Failed to save locally", err);
     }
 
     // Seems gapi.client.drive.files.create doesn't support actually updating content.
