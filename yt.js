@@ -210,12 +210,17 @@ function get_state_file_id()
     }
     return gapi.client.drive.files.list({
         "spaces": [app_data_folder],
+        "fields": "nextPageToken, files(id, name, size)",
     }).then(function(response){
         debug("Drive list response (for load)", response);
         let file = null;
         for (n in response.result.files) {
-            file = response.result.files[n];
-            debug("File", file);
+            let f = response.result.files[n];
+            if (f.name === state_file_name) {
+                debug("File", f);
+                file = response.result.files[n];
+            }
+            debug(`File ${f.name} id ${f.id} ${f.size}`);
         }
 
         if (file === null) {
