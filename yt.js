@@ -334,13 +334,24 @@ function state_from_string(s)
     return fix_state(JSON.parse(s));
 }
 
-// Save state.
+function format_bytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1000;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const convertedValue = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+    return `${convertedValue} ${sizes[i]}`;
+}
+
+// Save state, unconditionally.
 function save_state()
 {
-    log("Saving state");
+    let st = window.performance.now();
+    let ss = state_string();
+    log("Saving state of size", format_bytes(ss.length));
     // Save a backup locally.
     try {
-        localStorage.setItem("state", state_string());
+        localStorage.setItem("state", ss);
     } catch (err) {
         debug("Failed to save locally", err);
     }
@@ -357,7 +368,16 @@ function save_state()
             body: state_string(),
         });
         return new Promise((resolve, reject) => {
+            /*
+            req.then((file) => {
+                log("Save request done");
+                resolve(file);
+            }).catch((err) => {
+                log("Some error", err);
+            });*/
             req.execute(function(file) {
+                let et = window.performance.now();
+                log(`Settings saved in ${et - st} ms`, file);
                 resolve(file);
             });
         });
