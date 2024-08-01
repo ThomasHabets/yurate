@@ -135,6 +135,9 @@ window.addEventListener("load", (event) => {
         document.getElementById(e[0]).onclick = e[1];
     });
     show_page("login");
+
+    // TODO: does this actually work?
+    login();
 });
 
 function show_page(p)
