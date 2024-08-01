@@ -640,6 +640,7 @@ function render_subscriptions()
 function skip_all(ev)
 {
     document.querySelectorAll(".skip-button").forEach(btn => btn.click());
+    trigger_save();
 }
 
 function watch_later_delete_handler(ev)
