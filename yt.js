@@ -236,10 +236,14 @@ function download_drive_file(file_id) {
     return new Promise((resolve, reject) => {
         var accessToken = gapi.auth.getToken().access_token;
         var xhr = new XMLHttpRequest();
+        // xhr.responseType = "arraybuffer";
         xhr.open('GET', `https://www.googleapis.com/drive/v2/files/${file_id}?alt=media`);
         xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
         xhr.onload = function() {
             debug("Loaded from Drive", xhr);
+            if (xhr.status != 200) {
+                reject(`status for ${file_id} not 200: ${xhr.status}`);
+            }
             if (xhr.responseText == "") {
                 resolve({result: make_empty_state()});
             } else {
