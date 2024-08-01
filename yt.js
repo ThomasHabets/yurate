@@ -834,7 +834,7 @@ document.onkeyup = (e) => {
     } else if (e.key == 's') {
         render_subscriptions();
     } else if (e.key == 'w') {
-        render_watch_later();
+        //render_watch_later();
     } else if (e.key == 'y') {
         let active = document.querySelector(`#subscription-videos li:nth-child(${current_selection}) button[class*="skip-button"]`);
         watch_later_handler_button(active).then(() => {
