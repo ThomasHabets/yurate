@@ -30,6 +30,7 @@
 // * create state file if it doesn't exist
 
 // TODO: make client ID and API key settable, and store in localStorage.
+var state_file_name = "state.json";
 var state_file_id = null;
 var unsaved_changes = false;
 const app_data_folder = "appDataFolder";
@@ -74,6 +75,37 @@ function fix_state(st)
 
 var state = make_empty_state();
 
+var save_running = false;
+function execute_save()
+{
+    log(`Save callback`);
+    if (save_running) {
+        log("Save in progress. Waiting for it to complete…");
+        setTimeout(execute_save, 1000);
+        return;
+    }
+    saves_in_flight--;
+    if (saves_in_flight == 0) {
+        log(`Executing save`);
+        save_running = true;
+        save_state().then((file) => {
+            if (saves_in_flight == 0) {
+                document.getElementById("unsaved-changes").innerText = "";
+                unsaved_changes = false;
+            } else {
+                log("More saves queued")
+            }
+            save_running = false;
+        }).catch((e) => {
+            console.error("Saving:", err);
+            save_running = false;
+            setTimeout(execute_save, 1000);
+        });
+    } else {
+        log("Skipping save because more changes are queued");
+    }
+}
+
 var saves_in_flight = 0;
 function trigger_save()
 {
@@ -82,18 +114,8 @@ function trigger_save()
         document.getElementById("unsaved-changes").innerText = "Saving unsaved changes…";
     }
     saves_in_flight++;
-    setTimeout(() => {
-        saves_in_flight--;
-        if (saves_in_flight == 0) {
-            let st = window.performance.now();
-            save_state().then((file) => {
-                let et = window.performance.now();
-                log(`Settings saved in ${et - st} ms`, file);
-                document.getElementById("unsaved-changes").innerText = "";
-                unsaved_changes = false;
-            });
-        }
-    }, 1000);
+    log(`Queueing save. Currently ${saves_in_flight} saves pending.`);
+    setTimeout(execute_save, 1000);
 }
 
 window.addEventListener("load", (event) => {
@@ -161,19 +183,18 @@ window.onbeforeunload = function() {
 };
 
 // create state file, and return its ID
-function create_state_file()
+function create_state_file(fname, mime_type)
 {
     return gapi.client.drive.files.create({
         parents: [app_data_folder],
-        name: "state.json",
+        name: fname,
         media: {
-            mimeType: 'application/json',
+            mimeType: mime_type,
         },
         fields: "id",
     }).then(function(response){
         log("Drive create response", response);
-        state_file_id = response.result.id;
-        return Promise.resolve(state_file_id);
+        return Promise.resolve(response.result.id);
     }, function(err, file) {
         error("Drive create error", err,file);
     });
@@ -195,10 +216,11 @@ function get_state_file_id()
         }
 
         if (file === null) {
-            return create_state_file();
+            state_file_id = create_state_file(state_file_name, 'application/json');
+            return state_file_id;
         }
         state_file_id = file.id;
-        return Promise.resolve(file.id);
+        return Promise.resolve(state_file_id);
     });
 }
 
