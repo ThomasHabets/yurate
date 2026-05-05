@@ -27,11 +27,22 @@
 
 // TODO before announce:
 // * automatically find and create watch later page
-// * create state file if it doesn't exist
 
 // TODO: make client ID and API key settable, and store in localStorage.
-var state_file_name = "state.json";
-var state_file_id = null;
+const state_file_specs = [
+    {
+        name: "state.json.gzip",
+        mime_type: "application/gzip",
+        compression: "gzip",
+    },
+    {
+        name: "state.json",
+        mime_type: "application/json",
+        compression: null,
+    },
+];
+const preferred_state_file_spec = state_file_specs[0];
+var state_file = null;
 var unsaved_changes = false;
 const app_data_folder = "appDataFolder";
 const maxSubscriptions = 50;
@@ -97,7 +108,7 @@ function execute_save()
             }
             save_running = false;
         }).catch((e) => {
-            console.error("Saving:", err);
+            console.error("Saving:", e);
             save_running = false;
             setTimeout(execute_save, 1000);
         });
@@ -203,32 +214,71 @@ function create_state_file(fname, mime_type)
     });
 }
 
-function get_state_file_id()
+function get_existing_state_file(refresh)
 {
-    if (state_file_id !== null) {
-        return Promise.resolve(state_file_id);
+    if (refresh === undefined) {
+        refresh = false;
+    }
+    if (!refresh && state_file !== null) {
+        return Promise.resolve(state_file);
     }
     return gapi.client.drive.files.list({
         "spaces": [app_data_folder],
         "fields": "nextPageToken, files(id, name, size)",
     }).then(function(response){
         debug("Drive list response (for load)", response);
-        let file = null;
-        for (n in response.result.files) {
-            let f = response.result.files[n];
-            if (f.name === state_file_name) {
-                debug("File", f);
-                file = response.result.files[n];
+        let files = response.result.files || [];
+        let selected_file = null;
+        for (let i = 0; i < state_file_specs.length; i++) {
+            let spec = state_file_specs[i];
+            for (let n = 0; n < files.length; n++) {
+                let f = files[n];
+                if (f.name === spec.name) {
+                    debug("File", f);
+                    selected_file = {
+                        id: f.id,
+                        name: f.name,
+                        size: f.size,
+                        spec: spec,
+                    };
+                    break;
+                }
             }
+            if (selected_file !== null) {
+                break;
+            }
+        }
+        for (let n = 0; n < files.length; n++) {
+            let f = files[n];
             debug(`File ${f.name} id ${f.id} ${f.size}`);
         }
 
-        if (file === null) {
-            state_file_id = create_state_file(state_file_name, 'application/json');
-            return state_file_id;
+        if (selected_file === null) {
+            return Promise.resolve(null);
         }
-        state_file_id = file.id;
-        return Promise.resolve(state_file_id);
+        state_file = selected_file;
+        return Promise.resolve(state_file);
+    });
+}
+
+function get_or_create_preferred_state_file()
+{
+    if (state_file !== null && state_file.name === preferred_state_file_spec.name) {
+        return Promise.resolve(state_file);
+    }
+    return get_existing_state_file(true).then((existing_file) => {
+        if (existing_file !== null && existing_file.name === preferred_state_file_spec.name) {
+            return Promise.resolve(existing_file);
+        }
+        return create_state_file(preferred_state_file_spec.name, preferred_state_file_spec.mime_type).then((file_id) => {
+            state_file = {
+                id: file_id,
+                name: preferred_state_file_spec.name,
+                size: 0,
+                spec: preferred_state_file_spec,
+            };
+            return Promise.resolve(state_file);
+        });
     });
 }
 
@@ -236,29 +286,84 @@ function download_drive_file(file_id) {
     return new Promise((resolve, reject) => {
         var accessToken = gapi.auth.getToken().access_token;
         var xhr = new XMLHttpRequest();
-        // xhr.responseType = "arraybuffer";
+        xhr.responseType = "arraybuffer";
         xhr.open('GET', `https://www.googleapis.com/drive/v2/files/${file_id}?alt=media`);
         xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
         xhr.onload = function() {
             debug("Loaded from Drive", xhr);
             if (xhr.status != 200) {
                 reject(`status for ${file_id} not 200: ${xhr.status}`);
+                return;
             }
-            if (xhr.responseText == "") {
-                resolve({result: make_empty_state()});
-            } else {
-                let js = JSON.parse(xhr.responseText);
-                debug("JS from Drive", js);
-                resolve({
-                    result: js,
-                });
+            let buffer = xhr.response;
+            if (buffer === null || buffer.byteLength === 0) {
+                resolve(new Uint8Array());
+                return;
             }
+            resolve(new Uint8Array(buffer));
         };
         xhr.onerror = function() {
             reject(null);
         };
         xhr.send();
     });
+}
+
+function upload_drive_file(file_id, content, mime_type) {
+    return new Promise((resolve, reject) => {
+        var accessToken = gapi.auth.getToken().access_token;
+        var xhr = new XMLHttpRequest();
+        xhr.open('PATCH', `https://www.googleapis.com/upload/drive/v3/files/${file_id}?uploadType=media`);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + accessToken);
+        xhr.setRequestHeader('Content-Type', mime_type);
+        xhr.onload = function() {
+            if (xhr.status < 200 || xhr.status >= 300) {
+                reject(`status for ${file_id} not 2xx: ${xhr.status}`);
+                return;
+            }
+            try {
+                resolve(JSON.parse(xhr.responseText));
+            } catch (err) {
+                resolve(xhr.responseText);
+            }
+        };
+        xhr.onerror = function() {
+            reject(null);
+        };
+        xhr.send(content);
+    });
+}
+
+async function compress_string(s, compression)
+{
+    if (compression === null) {
+        return new TextEncoder().encode(s);
+    }
+    let stream = new Blob([s], {type: "application/json"}).stream()
+        .pipeThrough(new CompressionStream(compression));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function decompress_string(buf, compression)
+{
+    if (buf.byteLength === 0) {
+        return "";
+    }
+    if (compression === null) {
+        return new TextDecoder().decode(buf);
+    }
+    let stream = new Blob([buf], {type: "application/octet-stream"}).stream()
+        .pipeThrough(new DecompressionStream(compression));
+    return await new Response(stream).text();
+}
+
+async function decode_state_file(file, buf)
+{
+    if (buf.byteLength === 0) {
+        return make_empty_state();
+    }
+    let decoded = await decompress_string(buf, file.spec.compression);
+    return state_from_string(decoded);
 }
 // Load state from Drive, or create empty state.
 //
@@ -279,37 +384,38 @@ function load_state()
 
     let playlistpromise = load_playlists();
 
-    return get_state_file_id().then((file_id) => {
-        // Load from the cloud.
-//        return gapi.client.drive.files.get({
-//            "fileId": file_id,
-        //            "alt": "media",
-        return download_drive_file(file_id).then(function(response) {
-            log("Settings file read");
+    return get_existing_state_file().then((file) => {
+        if (file === null) {
+            log("No state file found in Drive");
+            return Promise.resolve(make_empty_state());
+        }
+        return download_drive_file(file.id).then((response) => {
+            log(`Settings file read from ${file.name}`);
             console.log("State file retrieved", response);
-            state2 = state_from_string(JSON.stringify(response.result));
-            if (state2 === false) {
-                state2 = make_empty_state();
-            }
-            // we need to fix it, because the XHR parsed it as plain
-            // JSON where it actually contains maps.
-            state2 = fix_state(state2);
-            debug("Skip list", state.skip.size, state2.skip.size, state2.skip);
-            state.skip = new Map([...state.skip, ...state2.skip]);
-            state.videos = new Map([...state.videos, ...state2.videos]);
-            state.chan2playlist = new Map([...state.chan2playlist, ...state2.chan2playlist]);
-            if (state2.watch_later !== undefined && state2.watch_later != "") {
-                state.watch_later = state2.watch_later;
-            }
-            return playlistpromise.then((ids) => {
-                if (state.watch_later === undefined && ids.length > 0) {
-                    state.watch_later = ids[0];
-                    trigger_save();
-                }
-                document.getElementById("watch-later-select").value = state.watch_later;
-                return Promise.resolve(state);
-            });
+            return decode_state_file(file, response);
         }, function(err) { error("Loading state file", err); });
+    }).then((state2) => {
+        if (state2 === false || state2 === null || state2 === undefined) {
+            state2 = make_empty_state();
+        }
+        // we need to fix it, because the XHR parsed it as plain
+        // JSON where it actually contains maps.
+        state2 = fix_state(state2);
+        debug("Skip list", state.skip.size, state2.skip.size, state2.skip);
+        state.skip = new Map([...state.skip, ...state2.skip]);
+        state.videos = new Map([...state.videos, ...state2.videos]);
+        state.chan2playlist = new Map([...state.chan2playlist, ...state2.chan2playlist]);
+        if (state2.watch_later !== undefined && state2.watch_later != "") {
+            state.watch_later = state2.watch_later;
+        }
+        return playlistpromise.then((ids) => {
+            if (state.watch_later === undefined && ids.length > 0) {
+                state.watch_later = ids[0];
+                trigger_save();
+            }
+            document.getElementById("watch-later-select").value = state.watch_later;
+            return Promise.resolve(state);
+        });
     }, function(err) {
         error("Drive load error", err);
     }).catch(function(err) {
@@ -360,27 +466,13 @@ function save_state()
     // https://stackoverflow.com/questions/34905363/create-file-with-google-drive-api-v3-javascript
 
     // Load from the cloud.
-    return get_state_file_id().then((file_id) => {
-        let req = gapi.client.request({
-            'path': `/upload/drive/v3/files/${file_id}`,
-            'method': 'PATCH',
-            'params': {'uploadType': 'media'},
-            body: state_string(),
-        });
-        return new Promise((resolve, reject) => {
-            /*
-            req.then((file) => {
-                log("Save request done");
-                resolve(file);
-            }).catch((err) => {
-                log("Some error", err);
-            });*/
-            req.execute(function(file) {
-                let et = window.performance.now();
-                log(`Settings saved in ${et - st} ms`, file);
-                resolve(file);
-            });
-        });
+    return get_or_create_preferred_state_file().then(async (file) => {
+        let compressed = await compress_string(ss, file.spec.compression);
+        log(`Compressed state to ${format_bytes(compressed.byteLength)} using ${file.spec.compression}`);
+        let saved_file = await upload_drive_file(file.id, new Blob([compressed], {type: file.spec.mime_type}), file.spec.mime_type);
+        let et = window.performance.now();
+        log(`Settings saved in ${et - st} ms`, saved_file);
+        return Promise.resolve(saved_file);
     }, function(err) {
         error("Save state error", err);
     });
