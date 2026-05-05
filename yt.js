@@ -29,19 +29,11 @@
 // * automatically find and create watch later page
 
 // TODO: make client ID and API key settable, and store in localStorage.
-const state_file_specs = [
-    {
-        name: "state.json.gzip",
-        mime_type: "application/gzip",
-        compression: "gzip",
-    },
-    {
-        name: "state.json",
-        mime_type: "application/json",
-        compression: null,
-    },
-];
-const preferred_state_file_spec = state_file_specs[0];
+const state_file_spec = {
+    name: "state.json.gzip",
+    mime_type: "application/gzip",
+    compression: "gzip",
+};
 var state_file = null;
 var unsaved_changes = false;
 const app_data_folder = "appDataFolder";
@@ -229,22 +221,16 @@ function get_existing_state_file(refresh)
         debug("Drive list response (for load)", response);
         let files = response.result.files || [];
         let selected_file = null;
-        for (let i = 0; i < state_file_specs.length; i++) {
-            let spec = state_file_specs[i];
-            for (let n = 0; n < files.length; n++) {
-                let f = files[n];
-                if (f.name === spec.name) {
-                    debug("File", f);
-                    selected_file = {
-                        id: f.id,
-                        name: f.name,
-                        size: f.size,
-                        spec: spec,
-                    };
-                    break;
-                }
-            }
-            if (selected_file !== null) {
+        for (let n = 0; n < files.length; n++) {
+            let f = files[n];
+            if (f.name === state_file_spec.name) {
+                debug("File", f);
+                selected_file = {
+                    id: f.id,
+                    name: f.name,
+                    size: f.size,
+                    spec: state_file_spec,
+                };
                 break;
             }
         }
@@ -261,21 +247,21 @@ function get_existing_state_file(refresh)
     });
 }
 
-function get_or_create_preferred_state_file()
+function get_or_create_state_file()
 {
-    if (state_file !== null && state_file.name === preferred_state_file_spec.name) {
+    if (state_file !== null && state_file.name === state_file_spec.name) {
         return Promise.resolve(state_file);
     }
     return get_existing_state_file(true).then((existing_file) => {
-        if (existing_file !== null && existing_file.name === preferred_state_file_spec.name) {
+        if (existing_file !== null && existing_file.name === state_file_spec.name) {
             return Promise.resolve(existing_file);
         }
-        return create_state_file(preferred_state_file_spec.name, preferred_state_file_spec.mime_type).then((file_id) => {
+        return create_state_file(state_file_spec.name, state_file_spec.mime_type).then((file_id) => {
             state_file = {
                 id: file_id,
-                name: preferred_state_file_spec.name,
+                name: state_file_spec.name,
                 size: 0,
-                spec: preferred_state_file_spec,
+                spec: state_file_spec,
             };
             return Promise.resolve(state_file);
         });
@@ -334,35 +320,29 @@ function upload_drive_file(file_id, content, mime_type) {
     });
 }
 
-async function compress_string(s, compression)
+async function compress_state_string(s)
 {
-    if (compression === null) {
-        return new TextEncoder().encode(s);
-    }
     let stream = new Blob([s], {type: "application/json"}).stream()
-        .pipeThrough(new CompressionStream(compression));
+        .pipeThrough(new CompressionStream(state_file_spec.compression));
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-async function decompress_string(buf, compression)
+async function decompress_state_string(buf)
 {
     if (buf.byteLength === 0) {
         return "";
     }
-    if (compression === null) {
-        return new TextDecoder().decode(buf);
-    }
     let stream = new Blob([buf], {type: "application/octet-stream"}).stream()
-        .pipeThrough(new DecompressionStream(compression));
+        .pipeThrough(new DecompressionStream(state_file_spec.compression));
     return await new Response(stream).text();
 }
 
-async function decode_state_file(file, buf)
+async function decode_state_file(buf)
 {
     if (buf.byteLength === 0) {
         return make_empty_state();
     }
-    let decoded = await decompress_string(buf, file.spec.compression);
+    let decoded = await decompress_state_string(buf);
     return state_from_string(decoded);
 }
 // Load state from Drive, or create empty state.
@@ -392,7 +372,7 @@ function load_state()
         return download_drive_file(file.id).then((response) => {
             log(`Settings file read from ${file.name}`);
             console.log("State file retrieved", response);
-            return decode_state_file(file, response);
+            return decode_state_file(response);
         }, function(err) { error("Loading state file", err); });
     }).then((state2) => {
         if (state2 === false || state2 === null || state2 === undefined) {
@@ -466,9 +446,9 @@ function save_state()
     // https://stackoverflow.com/questions/34905363/create-file-with-google-drive-api-v3-javascript
 
     // Load from the cloud.
-    return get_or_create_preferred_state_file().then(async (file) => {
-        let compressed = await compress_string(ss, file.spec.compression);
-        log(`Compressed state to ${format_bytes(compressed.byteLength)} using ${file.spec.compression}`);
+    return get_or_create_state_file().then(async (file) => {
+        let compressed = await compress_state_string(ss);
+        log(`Compressed state to ${format_bytes(compressed.byteLength)} using ${state_file_spec.compression}`);
         let saved_file = await upload_drive_file(file.id, new Blob([compressed], {type: file.spec.mime_type}), file.spec.mime_type);
         let et = window.performance.now();
         log(`Settings saved in ${et - st} ms`, saved_file);
