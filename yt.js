@@ -34,6 +34,9 @@ const state_file_spec = {
     mime_type: "application/gzip",
     compression: "gzip",
 };
+const youtube_scope = "https://www.googleapis.com/auth/youtube";
+const drive_appdata_scope = "https://www.googleapis.com/auth/drive.appdata";
+const required_scopes = `${youtube_scope} ${drive_appdata_scope}`;
 var state_file = null;
 var unsaved_changes = false;
 const app_data_folder = "appDataFolder";
@@ -215,7 +218,7 @@ function get_existing_state_file(refresh)
         return Promise.resolve(state_file);
     }
     return gapi.client.drive.files.list({
-        "spaces": [app_data_folder],
+        "spaces": app_data_folder,
         "fields": "nextPageToken, files(id, name, size)",
     }).then(function(response){
         debug("Drive list response (for load)", response);
@@ -472,12 +475,17 @@ function login() {
 function authenticate() {
     log("Authenticating");
     return gapi.auth2.getAuthInstance()
-        .signIn({scope: "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/drive.appdata"})
-        //.signIn({scope: "https://www.googleapis.com/auth/youtube"})
-        //.signIn({oauthScopes: ["https://www.googleapis.com/auth/youtube","https://www.googleapis.com/auth/drive.appdata"]})
-        .then(function() { log("Sign-in successful");},
-              function(err) { error("Error signing in", err);})
-        .catch(function(err) { error("catch", err);});
+        .signIn({scope: required_scopes})
+        .then(function(user) {
+            if (!user.hasGrantedScopes(required_scopes)) {
+                throw new Error(`Missing required Google API scopes: ${required_scopes}`);
+            }
+            log("Sign-in successful");
+            return user;
+        }, function(err) {
+            error("Error signing in", err);
+            return Promise.reject(err);
+        });
 }
 function loadClient() {
     log("Loading client");
