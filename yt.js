@@ -141,9 +141,6 @@ window.addEventListener("load", (event) => {
         document.getElementById(e[0]).onclick = e[1];
     });
     show_page("login");
-
-    // TODO: does this actually work?
-    login();
 });
 
 function show_page(p)
@@ -465,10 +462,11 @@ function save_state()
 function login() {
     log("Starting login");
     show_page("loading");
-    authenticate().then(loadClient).then(load_state).then(function(){
+    return authenticate().then(loadClient).then(load_state).then(function(){
         show_page("content");
     }).catch(function(err) {
         error("Logging in", err);
+        show_page("login");
     });
 }
 
